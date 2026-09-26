@@ -119,14 +119,23 @@ fn admin_treasury_token_error_before_initialize() {
 }
 
 #[test]
-#[ignore = "TODO(issue): implement deposit::deposit + accounting::convert_to_shares"]
 fn deposit_mints_shares_proportional_to_exchange_rate() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _admin, _treasury, _token) = setup_with_token(&env);
-    let _user = Address::generate(&env);
-    // On the very first deposit, shares must be minted 1:1 with assets.
-    todo!("deposit `amount`, assert `get_position(user).shares == amount`");
+    let (client, _admin, _treasury, token) = setup_with_token(&env);
+    let user = Address::generate(&env);
+
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token);
+    token_admin.mint(&user, &1_000);
+
+    // First deposit: shares minted 1:1 with assets.
+    let shares = client.deposit(&user, &1_000);
+    assert_eq!(shares, 1_000, "first deposit must mint shares 1:1");
+
+    let position = client.get_position(&user);
+    assert_eq!(position.shares, 1_000);
+    assert_eq!(position.owner, user);
+    assert_eq!(client.total_shares(), 1_000);
 }
 
 #[test]
