@@ -27,6 +27,8 @@ import { ListGoalsDto } from './dto/list-goals.dto';
 import { ListLockedDto } from './dto/list-locked.dto';
 import { SavingsSummaryDto } from './dto/savings-summary.dto';
 import { YieldPositionResponseDto } from './dto/yield-position-response.dto';
+import { YieldRateResponseDto } from './dto/yield-rate-response.dto';
+import { YieldAdminOverviewResponseDto } from './dto/yield-admin-overview-response.dto';
 import { SavingsAddressListQueryDto } from './dto/savings-list-query.dto';
 import { SavingsAddressParamDto } from './dto/stellar-address.dto';
 import { SavingsService } from './savings.service';
@@ -223,40 +225,41 @@ export class SavingsController {
   }
 
   /**
-   * GET /savings/yield/rate?window=
+   * GET /savings/yield/rate
    *
-   * Returns the yield adapter's current exchange rate (assets per share)
-   * plus a trailing-window APR derived from harvest history. `window`
-   * optionally overrides the trailing window in days (defaults to 30).
-   * Public so the frontend APR display can be built directly against it.
+   * Returns the current yield-adapter rate (APR/APY) and the timestamp it
+   * was last observed. Public — no authentication required.
    */
   @Get('yield/rate')
   @Public()
-  @ApiOperation({
-    summary: "Get the yield adapter's exchange rate and trailing APR",
-  })
-  @ApiQuery({
-    name: 'window',
-    required: false,
-    type: Number,
-    description: 'Trailing window in days (defaults to 30)',
-  })
+  @ApiOperation({ summary: 'Get the current yield rate (APR/APY)' })
   @ApiResponse({
     status: 200,
-    description: 'Current exchange rate and trailing-window APR',
+    description: 'Current yield rate and last-observed timestamp',
+    type: YieldRateResponseDto,
   })
+  async getYieldRate(): Promise<YieldRateResponseDto> {
+    return this.savingsService.getYieldRate();
+  }
+
+  /**
+   * GET /savings/yield/admin/overview
+   *
+   * Returns an admin-facing overview of the yield adapter: total shares,
+   * total estimated value, and the number of active positions. Requires
+   * authentication.
+   */
+  @Get('yield/admin/overview')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get the admin yield adapter overview' })
   @ApiResponse({
-    status: 400,
-    description: 'Invalid window value',
+    status: 200,
+    description: 'Aggregate yield adapter totals and active position count',
+    type: YieldAdminOverviewResponseDto,
   })
-  async getYieldRate(@Query('window') window?: string) {
-    let windowDays: number | undefined;
-    if (window !== undefined) {
-      windowDays = Number(window);
-      if (!Number.isFinite(windowDays) || windowDays <= 0) {
-        throw new BadRequestException('window must be a positive number of days');
-      }
-    }
-    return this.balanceService.getYieldRate(windowDays);
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async getYieldAdminOverview(): Promise<YieldAdminOverviewResponseDto> {
+    return this.savingsService.getYieldAdminOverview();
   }
 }
