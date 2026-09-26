@@ -17,10 +17,6 @@
 //! - `convert_to_assets` (used by `request_withdraw`, `claim_withdraw`,
 //!   `cancel_withdraw`'s re-mint): round **down**. A withdrawal that doesn't
 //!   divide evenly pays out slightly less, never more.
-//!
-//! TODO(issue): implement both directions and add the property test in
-//! `test.rs` that asserts no sequence of deposit/withdraw calls can increase
-//! total assets extracted beyond what was deposited plus harvested yield.
 
 use soroban_sdk::{token, Env, IntoVal, Symbol, Vec};
 
@@ -45,18 +41,13 @@ pub fn total_assets(env: &Env) -> i128 {
     let idle_balance = token_client.balance(&env.current_contract_address());
 
     // Check if there's an active strategy
-    let active_strategy_id: Option<u64> = env
-        .storage()
-        .instance()
-        .get(&DataKey::ActiveStrategy);
+    let active_strategy_id: Option<u64> = env.storage().instance().get(&DataKey::ActiveStrategy);
 
     if let Some(strategy_id) = active_strategy_id {
         // Get the strategy info to find its address
         let strategy_key = DataKey::Strategy(strategy_id);
-        let strategy_info_opt: Option<crate::types::StrategyInfo> = env
-            .storage()
-            .persistent()
-            .get(&strategy_key);
+        let strategy_info_opt: Option<crate::types::StrategyInfo> =
+            env.storage().persistent().get(&strategy_key);
 
         if let Some(strategy_info) = strategy_info_opt {
             // Query the strategy's balance entrypoint: balance(of: Address) -> i128
@@ -153,9 +144,7 @@ pub fn convert_to_assets(env: &Env, shares: i128) -> Result<i128, Error> {
 
     // Compute assets = (shares * total_assets) / total_shares
     // Rounding down favors the adapter over the withdrawer
-    let numerator = shares
-        .checked_mul(assets_in_vault)
-        .ok_or(Error::Overflow)?;
+    let numerator = shares.checked_mul(assets_in_vault).ok_or(Error::Overflow)?;
 
     // Integer division rounds down automatically (toward zero for positive numbers)
     let assets = numerator
