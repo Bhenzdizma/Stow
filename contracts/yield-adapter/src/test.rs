@@ -8,55 +8,21 @@
 //!
 //! Tests that exercise a strategy (`harvest`, `migrate_strategy`, ...) will
 //! additionally need a minimal mock strategy contract implementing the
-//! interface documented in `README.md` under "Strategy interface"; building
-//! that mock is issue-worthy on its own (see the module doc below) and does
-//! not exist yet, so those tests cannot be un-ignored until it does.
+//! interface documented in `README.md` under "Strategy interface" — use
+//! `crate::mock_strategy::MockStrategy` (via `setup_mock_strategy`).
 
 use soroban_sdk::{
-    contract, contractimpl, testutils::Address as _, testutils::Events as _, Address, Env, IntoVal,
-    Symbol,
+    testutils::Address as _, testutils::Events as _, Address, Env, IntoVal, Symbol,
 };
 
 use crate::error::Error;
 use crate::{YieldAdapter, YieldAdapterClient};
 
 // ---------------------------------------------------------------------------
-// Mock strategy — a minimal real contract implementing the "Strategy
-// interface" documented in README.md (`deposit`, `withdraw`, `balance`), so
-// #245/#246's event-publisher tests can exercise register/activate/migrate
-// and harvest/fee flows end to end. A fuller-featured mock (configurable
-// simulated yield curves, failure injection, etc.) is tracked separately as
-// issue #251; this is deliberately the minimum needed to make THIS PR's own
-// new tests real.
-#[contract]
-pub struct MockStrategy;
-
-#[contractimpl]
-impl MockStrategy {
-    pub fn deposit(env: Env, from: Address, amount: i128) {
-        let key = (Symbol::new(&env, "bal"), from);
-        let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
-        env.storage().instance().set(&key, &(current + amount));
-    }
-
-    pub fn withdraw(env: Env, to: Address, amount: i128) {
-        let key = (Symbol::new(&env, "bal"), to);
-        let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
-        env.storage().instance().set(&key, &(current - amount));
-    }
-
-    pub fn balance(env: Env, of: Address) -> i128 {
-        let key = (Symbol::new(&env, "bal"), of);
-        env.storage().instance().get(&key).unwrap_or(0)
-    }
-
-    /// Test-only: simulate yield/loss by directly setting the reported
-    /// balance, independent of actual deposit/withdraw calls.
-    pub fn set_reported_balance(env: Env, of: Address, amount: i128) {
-        let key = (Symbol::new(&env, "bal"), of);
-        env.storage().instance().set(&key, &amount);
-    }
-}
+// Mock strategy — see `crate::mock_strategy` for the full interface and test
+// knobs (simulated yield/loss, failure injection, withdrawal haircut,
+// token-backed mode).
+use crate::mock_strategy::{MockStrategy, MockStrategyClient};
 
 fn setup_mock_strategy(env: &Env) -> Address {
     env.register(MockStrategy, ())

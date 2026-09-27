@@ -96,8 +96,10 @@ This adapter treats it as opaque and reaches it only through
   **including** any accrued yield (or loss) — this is what `harvest` diffs
   against the adapter's last-known deployed balance to compute yield.
 
-A minimal in-repo mock implementing this interface (for tests) is tracked as
-its own issue — see `test.rs`'s module doc.
+An in-repo mock implementing this interface lives in `src/mock_strategy.rs`
+(test-only). Besides the three required entrypoints it exposes knobs for
+simulating yield/loss, injecting failures, and haircutting withdrawals; call
+`init(token)` to make it move real tokens instead of only keeping a ledger.
 
 **Trust boundary**: the adapter does not verify a strategy's solvency or
 correctness beyond the `balance` figure it reports. A malicious or buggy
