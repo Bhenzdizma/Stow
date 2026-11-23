@@ -103,13 +103,15 @@ fn save_collateral(env: &Env, state: &CollateralState) {
 /// Return the current balance of `owner`'s vault — flexible first, then
 /// interest. Returns `0` if neither account exists.
 pub fn vault_balance(env: &Env, owner: &Address) -> i128 {
-    // Try flexible account first.
+    // Try flexible account first (if it has positive balance).
     if let Some(acc) = env
         .storage()
         .persistent()
         .get::<_, FlexibleAccount>(&DataKey::Flexible(owner.clone()))
     {
-        return acc.balance;
+        if acc.balance > 0 {
+            return acc.balance;
+        }
     }
     // Fall back to interest account principal (not yet-accrued interest).
     if let Some(acc) = env
@@ -463,13 +465,16 @@ pub fn record_borrow(
     state.borrowed = new_borrowed;
     save_collateral(env, &state);
 
-    // Update the loan record total.
+    // Update the loan record total and lender.
     let loan_key = DataKey::LoanRecord(state.loan_id);
     if let Some(mut loan) = env.storage().persistent().get::<_, LoanRecord>(&loan_key) {
         loan.total_borrowed = loan
             .total_borrowed
             .checked_add(amount)
             .ok_or(Error::Overflow)?;
+        if !is_registered_lender(env, &loan.lender) {
+            loan.lender = lender.clone();
+        }
         env.storage().persistent().set(&loan_key, &loan);
         extend_persistent_ttl(env, &loan_key);
     }
@@ -624,11 +629,13 @@ fn debit_vault_balance(env: &Env, owner: &Address, amount: i128) -> Result<(), E
         .persistent()
         .get::<_, FlexibleAccount>(&flex_key)
     {
-        acc.balance = acc.balance.checked_sub(amount).ok_or(Error::Overflow)?;
-        acc.updated_at = env.ledger().timestamp();
-        env.storage().persistent().set(&flex_key, &acc);
-        extend_persistent_ttl(env, &flex_key);
-        return Ok(());
+        if acc.balance >= amount {
+            acc.balance = acc.balance.checked_sub(amount).ok_or(Error::Overflow)?;
+            acc.updated_at = env.ledger().timestamp();
+            env.storage().persistent().set(&flex_key, &acc);
+            extend_persistent_ttl(env, &flex_key);
+            return Ok(());
+        }
     }
 
     let int_key = DataKey::InterestAccount(owner.clone());

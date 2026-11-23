@@ -18,7 +18,6 @@ use crate::collateral::{DEFAULT_BORROW_RATIO_BPS, DEFAULT_LIQUIDATION_RATIO_BPS}
 use crate::error::Error;
 use crate::events::{
     TOPIC_COLLATERAL_ENABLED, TOPIC_COLLATERAL_LIQUIDATED, TOPIC_COLLATERAL_USED,
-    TOPIC_LENDER_REGISTERED,
 };
 use crate::{SavingsVault, SavingsVaultClient};
 
@@ -381,20 +380,6 @@ fn liquidation_healthy_position_rejected() {
 
 #[test]
 fn liquidation_triggers_past_threshold() {
-    // Note: in this vault design, the lender records borrow debt on-chain.
-    // The lender can trigger liquidation by recording that the borrowed
-    // amount exceeds the liquidation threshold RELATIVE TO THE CURRENT BALANCE.
-    // We simulate undercollateralisation by:
-    //   1. Enabling collateral with a borrow_ratio of 8_000 (80%).
-    //   2. Having the lender record 80 UNIT borrow (at limit).
-    //   3. Owner withdraws 12 UNIT (the free 20%) → balance = 88 UNIT.
-    //      min_locked = ceil(80 * 10_000 / 8_000) = 100 → withdrawal blocked.
-    //   The withdrawal IS blocked, confirming the lock. We cannot directly
-    //   reduce balance without repaying. So instead we demonstrate that the
-    //   liquidation check correctly evaluates the threshold:
-    //   At 80 UNIT borrowed / 100 UNIT balance = 80% < 90% → PositionHealthy.
-    //   The liquidation path is exercised in collateral_liquidated_event_emitted
-    //   where the lender records borrow exceeding min_locked threshold.
     let env = Env::default();
     let c = ctx(&env);
     let (owner, lender) = setup_vault_and_lender(&env, &c, 100 * UNIT);
@@ -412,36 +397,68 @@ fn liquidation_triggers_past_threshold() {
         c.client.try_liquidate(&owner),
         Err(Ok(Error::PositionHealthy))
     );
-    // Borrow limit is enforced: cannot exceed 80 UNIT.
-    assert_eq!(
-        c.client.try_collateral_borrow(&lender, &owner, &1),
-        Err(Ok(Error::CollateralLimitExceeded))
-    );
-    // Repay clears the debt.
-    c.client.collateral_repay(&lender, &owner, &(80 * UNIT));
-    assert_eq!(c.client.collateral_state(&owner).borrowed, 0);
+
+    // Simulate collateral balance drop below liquidation threshold:
+    // e.g. balance drops to 85 UNIT.
+    // 80 UNIT borrowed * 10_000 = 800_000 > 85 UNIT balance * 9_000 = 765_000.
+    env.as_contract(&c.client.address, || {
+        let key = crate::types::DataKey::Flexible(owner.clone());
+        let mut acc: crate::types::FlexibleAccount = env.storage().persistent().get(&key).unwrap();
+        acc.balance = 85 * UNIT;
+        env.storage().persistent().set(&key, &acc);
+    });
+
+    // Liquidation now triggers and succeeds.
+    c.client.liquidate(&owner);
+
+    // Position debt is cleared and vault balance is debited.
+    let state = c.client.collateral_state(&owner);
+    assert_eq!(state.borrowed, 0);
+
     let loan = c.client.loan_record(&loan_id);
     assert_eq!(loan.total_borrowed, 0);
+
+    // Balance was debited by seized amount (min(85 UNIT, min_locked 100 UNIT) = 85 UNIT).
+    assert_eq!(c.client.get_account(&owner).balance, 0);
 }
 
 #[test]
 fn liquidation_seizes_min_of_balance_and_locked() {
-    // Verify the PositionHealthy guard: at max borrow (80%) the position is healthy.
     let env = Env::default();
     let c = ctx(&env);
     let (owner, lender) = setup_vault_and_lender(&env, &c, 100 * UNIT);
 
-    c.client.enable_as_collateral(
+    let _loan_id = c.client.enable_as_collateral(
         &owner,
         &0,
         &DEFAULT_BORROW_RATIO_BPS,
         &DEFAULT_LIQUIDATION_RATIO_BPS,
     );
     c.client.collateral_borrow(&lender, &owner, &(80 * UNIT));
+
+    // Verify healthy position cannot be liquidated.
     assert_eq!(
         c.client.try_liquidate(&owner),
         Err(Ok(Error::PositionHealthy))
     );
+
+    // Simulate balance reduction to 85 UNIT (below 90% threshold for 80 UNIT debt).
+    env.as_contract(&c.client.address, || {
+        let key = crate::types::DataKey::Flexible(owner.clone());
+        let mut acc: crate::types::FlexibleAccount = env.storage().persistent().get(&key).unwrap();
+        acc.balance = 85 * UNIT;
+        env.storage().persistent().set(&key, &acc);
+    });
+
+    let token_client = TokenClient::new(&env, &c.token);
+    let lender_bal_before = token_client.balance(&lender);
+
+    // Liquidate. min(balance = 85 UNIT, min_locked = 100 UNIT) -> 85 UNIT seized and sent to lender.
+    c.client.liquidate(&owner);
+
+    let lender_bal_after = token_client.balance(&lender);
+    assert_eq!(lender_bal_after - lender_bal_before, 85 * UNIT);
+    assert_eq!(c.client.get_account(&owner).balance, 0);
 }
 
 #[test]
@@ -487,13 +504,37 @@ fn collateral_used_event_emitted() {
 
 #[test]
 fn collateral_liquidated_event_emitted() {
-    // The liquidate() path exists for use by external oracle-based lenders
-    // that can observe a collateral price drop off-chain. In a pure token
-    // vault the balance cannot drop below what was deposited without a
-    // withdrawal (which the collateral lock prevents while debt is active).
-    // This test verifies the PositionHealthy guard fires, and that the
-    // collateral_repaid event IS emitted on repayment (exercising the event
-    // emission path that shares the same machinery).
+    let env = Env::default();
+    let c = ctx(&env);
+    let (owner, lender) = setup_vault_and_lender(&env, &c, 100 * UNIT);
+
+    let _loan_id = c.client.enable_as_collateral(
+        &owner,
+        &0,
+        &DEFAULT_BORROW_RATIO_BPS,
+        &DEFAULT_LIQUIDATION_RATIO_BPS,
+    );
+    c.client.collateral_borrow(&lender, &owner, &(80 * UNIT));
+
+    // Drop balance so it crosses liquidation threshold.
+    env.as_contract(&c.client.address, || {
+        let key = crate::types::DataKey::Flexible(owner.clone());
+        let mut acc: crate::types::FlexibleAccount = env.storage().persistent().get(&key).unwrap();
+        acc.balance = 85 * UNIT;
+        env.storage().persistent().set(&key, &acc);
+    });
+
+    c.client.liquidate(&owner);
+
+    let events = env.events().all();
+    let found = events
+        .iter()
+        .any(|(_contract, topics, _data)| topic_matches(&env, &topics, TOPIC_COLLATERAL_LIQUIDATED));
+    assert!(found, "collateral_liquidated event must be emitted");
+}
+
+#[test]
+fn collateral_repaid_event_emitted() {
     use crate::events::TOPIC_COLLATERAL_REPAID;
     let env = Env::default();
     let c = ctx(&env);
@@ -506,15 +547,8 @@ fn collateral_liquidated_event_emitted() {
         &DEFAULT_LIQUIDATION_RATIO_BPS,
     );
     c.client.collateral_borrow(&lender, &owner, &(80 * UNIT));
-
-    // Position is healthy — liquidate must reject.
-    assert_eq!(
-        c.client.try_liquidate(&owner),
-        Err(Ok(Error::PositionHealthy))
-    );
-
-    // Repay emits collateral_repaid.
     c.client.collateral_repay(&lender, &owner, &(80 * UNIT));
+
     let events = env.events().all();
     let found = events
         .iter()
@@ -765,4 +799,79 @@ fn interest_withdrawal_respects_collateral_lock() {
     // Withdraw 50 → leaves 50 == min_locked → OK.
     c.client.interest_withdraw(&owner, &(50 * UNIT));
     assert_eq!(c.client.interest_account(&owner).principal, 50 * UNIT);
+}
+
+#[test]
+fn delegate_withdrawal_respects_collateral_lock() {
+    let env = Env::default();
+    let c = ctx(&env);
+    let (owner, lender) = setup_vault_and_lender(&env, &c, 100 * UNIT);
+    let delegate = Address::generate(&env);
+
+    // Grant delegation directly
+    env.as_contract(&c.client.address, || {
+        crate::delegation::delegate_savings(
+            &env,
+            owner.clone(),
+            delegate.clone(),
+            crate::types::PermissionLevel::Full,
+            None,
+        )
+        .unwrap();
+    });
+
+    c.client.enable_as_collateral(
+        &owner,
+        &0,
+        &DEFAULT_BORROW_RATIO_BPS,
+        &DEFAULT_LIQUIDATION_RATIO_BPS,
+    );
+    // Borrow 80 UNIT → min_locked = 100 UNIT.
+    c.client.collateral_borrow(&lender, &owner, &(80 * UNIT));
+
+    // Delegate withdrawal is blocked by collateral lock.
+    let result = env.as_contract(&c.client.address, || {
+        crate::delegation::delegated_withdraw(&env, delegate, owner, UNIT)
+    });
+    assert_eq!(result, Err(Error::CollateralWithdrawalBlocked));
+}
+
+#[test]
+fn interest_vault_liquidation() {
+    let env = Env::default();
+    let c = ctx(&env);
+
+    let owner = Address::generate(&env);
+    let lender = Address::generate(&env);
+    c.client.register_lender(&c.admin, &lender);
+
+    mint(&env, &c.token, &owner, 100 * UNIT);
+    c.client.interest_deposit(&owner, &(100 * UNIT));
+
+    let loan_id = c.client.enable_as_collateral(
+        &owner,
+        &0,
+        &DEFAULT_BORROW_RATIO_BPS,
+        &DEFAULT_LIQUIDATION_RATIO_BPS,
+    );
+    c.client.collateral_borrow(&lender, &owner, &(80 * UNIT));
+
+    // Drop principal in interest account below liquidation threshold.
+    env.as_contract(&c.client.address, || {
+        let key = crate::types::DataKey::InterestAccount(owner.clone());
+        let mut acc: crate::types::InterestAccount = env.storage().persistent().get(&key).unwrap();
+        acc.principal = 85 * UNIT;
+        env.storage().persistent().set(&key, &acc);
+    });
+
+    let token_client = TokenClient::new(&env, &c.token);
+    let lender_bal_before = token_client.balance(&lender);
+
+    c.client.liquidate(&owner);
+
+    let lender_bal_after = token_client.balance(&lender);
+    assert_eq!(lender_bal_after - lender_bal_before, 85 * UNIT);
+    assert_eq!(c.client.interest_account(&owner).principal, 0);
+    assert_eq!(c.client.collateral_state(&owner).borrowed, 0);
+    assert_eq!(c.client.loan_record(&loan_id).total_borrowed, 0);
 }
