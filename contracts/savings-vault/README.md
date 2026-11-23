@@ -1434,3 +1434,28 @@ Topics: `(Symbol("ConditionalWithdrawal"), owner: Address)`
 | `observed` | `i128` | Value that satisfied it: oracle price, ledger timestamp, or balance. |
 | `new_balance` | `i128` | Flexible balance after the withdrawal. |
 | `timestamp` | `u64` | Ledger timestamp of the withdrawal. |
+
+#### `profit_share_configured`
+Topics: `(Symbol("profit_share_configured"), owner: Address)`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `owner` | `Address` | Interest-account owner. |
+| `stakeholders` | `Vec<Address>` | Stakeholder addresses. |
+| `shares_bps` | `Vec<u32>` | Shares in basis points, parallel to `stakeholders`; sum to 10 000. |
+| `frequency` | `DistributionFrequency` | `Daily`, `Weekly` or `Monthly`. |
+| `pending` | `bool` | `true` when this updates an existing config (applies from the next period). |
+| `timestamp` | `u64` | Ledger timestamp of the call. |
+
+#### `ProfitDistributed`
+Topics: `(Symbol("ProfitDistributed"), owner: Address)`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `owner` | `Address` | Interest-account owner whose interest was split. |
+| `total` | `i128` | Total paid out to stakeholders. |
+| `stakeholders` | `Vec<Address>` | Stakeholders paid this period. |
+| `amounts` | `Vec<i128>` | Amount paid to each stakeholder, parallel to `stakeholders`. |
+| `carried_forward` | `i128` | Rounding dust kept for the next period. |
+| `distribution_count` | `u32` | Number of distributions executed so far, including this one. |
+| `timestamp` | `u64` | Ledger timestamp of the distribution. |

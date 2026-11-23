@@ -241,3 +241,18 @@ pub const TOPIC_WITHDRAWAL_CONDITION_CANCELLED: &str = "withdrawal_condition_can
 /// Data:   `(owner: Address, amount: i128, condition: WithdrawalCondition,
 ///          observed: i128, new_balance: i128, timestamp: u64)`
 pub const TOPIC_CONDITIONAL_WITHDRAWAL: &str = "ConditionalWithdrawal";
+
+// --- profit sharing (#642) ----------------------------------------------
+/// Emitted when an owner configures (or queues an update to) profit sharing.
+///
+/// Topics: `(Symbol("profit_share_configured"), owner: Address)`
+/// Data:   `(owner: Address, stakeholders: Vec<Address>, shares_bps: Vec<u32>,
+///          frequency: DistributionFrequency, pending: bool, timestamp: u64)`
+pub const TOPIC_PROFIT_SHARE_CONFIGURED: &str = "profit_share_configured";
+/// Emitted when accumulated interest is split among stakeholders.
+///
+/// Topics: `(Symbol("ProfitDistributed"), owner: Address)`
+/// Data:   `(owner: Address, total: i128, stakeholders: Vec<Address>,
+///          amounts: Vec<i128>, carried_forward: i128, distribution_count: u32,
+///          timestamp: u64)`
+pub const TOPIC_PROFIT_DISTRIBUTED: &str = "ProfitDistributed";

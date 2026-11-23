@@ -156,4 +156,12 @@ pub enum Error {
     InvalidCondition = 141,
     /// No price oracle is configured, or the oracle call failed.
     OracleUnavailable = 142,
+
+    // --- Profit sharing (150-159) ---
+    /// Stakeholder shares are malformed: empty, mismatched lengths, a zero
+    /// share, a duplicate stakeholder, too many stakeholders, or shares that
+    /// do not sum to 10 000 bps (100%).
+    InvalidProfitShares = 150,
+    /// The current distribution period has not elapsed yet.
+    DistributionNotDue = 151,
 }

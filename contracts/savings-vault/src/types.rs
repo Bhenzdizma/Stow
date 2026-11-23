@@ -794,4 +794,74 @@ pub enum DataKey {
     /// Durability: persistent — one entry per owner. TTL: bumped on every
     /// read/write via `extend_persistent_ttl`.
     WithdrawalCondition(Address),
+
+    // --- Profit sharing (#642) ---
+    /// `ProfitShareConfig` for an interest-account owner. Absent means the
+    /// owner keeps all interest.
+    ///
+    /// Durability: persistent — one entry per owner. TTL: bumped on every
+    /// read/write via `extend_persistent_ttl`.
+    ProfitShare(Address),
+}
+
+/// How often accumulated interest is split among profit-share stakeholders.
+/// See [`crate::profit_share`].
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum DistributionFrequency {
+    Daily,
+    Weekly,
+    Monthly,
+}
+
+impl DistributionFrequency {
+    /// Length of one distribution period, in seconds.
+    pub fn period_seconds(&self) -> u64 {
+        match self {
+            DistributionFrequency::Daily => 86_400,
+            DistributionFrequency::Weekly => 604_800,
+            DistributionFrequency::Monthly => 2_592_000,
+        }
+    }
+}
+
+/// A stakeholder set and frequency waiting to take effect at the next
+/// distribution period (see [`ProfitShareConfig::pending`]).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PendingProfitShare {
+    pub stakeholders: Vec<Address>,
+    pub shares_bps: Vec<u32>,
+    pub frequency: DistributionFrequency,
+}
+
+/// Profit-sharing configuration for an interest account (#642).
+///
+/// Interest credited to the owner's interest account accumulates in
+/// `undistributed`; once per `frequency` period it is split among
+/// `stakeholders` by `shares_bps` (which always sum to 10 000).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProfitShareConfig {
+    pub owner: Address,
+    /// Stakeholder addresses, parallel to `shares_bps`.
+    pub stakeholders: Vec<Address>,
+    /// Each stakeholder's share in basis points; sums to 10 000.
+    pub shares_bps: Vec<u32>,
+    pub frequency: DistributionFrequency,
+    /// Start of the current distribution period. Advances by whole periods.
+    pub last_distributed_at: u64,
+    /// Interest credited since the last distribution (plus rounding dust
+    /// carried forward), not yet paid out.
+    pub undistributed: i128,
+    /// Lifetime amount paid to each stakeholder.
+    pub distributed: Map<Address, i128>,
+    /// Number of distributions executed so far.
+    pub distribution_count: u32,
+    /// An update queued by `configure_profit_sharing`; becomes active right
+    /// after the next distribution, so the current period is always split
+    /// under the shares in force when it started.
+    pub pending: Option<PendingProfitShare>,
+    pub created_at: u64,
+    pub updated_at: u64,
 }
