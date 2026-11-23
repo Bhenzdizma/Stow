@@ -151,6 +151,51 @@ pub struct RolloverConfig {
     pub enabled_at: u64,
 }
 
+/// One heir in an owner's inheritance plan (#635).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Beneficiary {
+    pub address: Address,
+    /// Share of the owner's flexible balance, in basis points. All shares in
+    /// a plan sum to exactly `10_000`.
+    pub share_bps: u32,
+    /// Amount already paid out to this beneficiary, in stroops.
+    pub claimed: i128,
+}
+
+/// Inheritance plan for an owner's flexible savings (#635).
+///
+/// Access unlocks gradually:
+/// 1. While the owner is active (`now < last_active_at + inactivity_period`)
+///    beneficiaries cannot claim anything.
+/// 2. Once the owner has been inactive for `inactivity_period`, each
+///    beneficiary may claim `partial_access_bps` of their share.
+/// 3. When the `verifier` attests a proof of death, the remainder of every
+///    share unlocks. Plans without a verifier unlock in full at step 2.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct InheritancePlan {
+    pub owner: Address,
+    pub beneficiaries: Vec<Beneficiary>,
+    /// Seconds of owner inactivity after which access starts to unlock.
+    pub inactivity_period: u64,
+    /// Ledger timestamp of the owner's last recorded activity.
+    pub last_active_at: u64,
+    /// Portion of each share (bps) claimable before proof of death.
+    pub partial_access_bps: u32,
+    /// Trusted party that attests proof of death. `None` means no proof
+    /// is required.
+    pub verifier: Option<Address>,
+    /// Hash of the attested proof-of-death document, once verified.
+    pub proof_hash: Option<BytesN<32>>,
+    /// Ledger timestamp at which the proof was attested.
+    pub proof_verified_at: Option<u64>,
+    /// Flexible balance frozen at the first claim; every share is computed
+    /// against it so payout order cannot change what anyone receives.
+    pub snapshot_balance: Option<i128>,
+    pub created_at: u64,
+}
+
 /// A condition gating an automated withdrawal from a flexible account (#639).
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
@@ -794,4 +839,11 @@ pub enum DataKey {
     /// Durability: persistent — one entry per owner. TTL: bumped on every
     /// read/write via `extend_persistent_ttl`.
     WithdrawalCondition(Address),
+
+    // --- Inheritance planning (#635) ---
+    /// `InheritancePlan` for an owner. Absent means no plan.
+    ///
+    /// Durability: persistent — one entry per owner. TTL: bumped on every
+    /// read/write via `extend_persistent_ttl`.
+    Inheritance(Address),
 }
