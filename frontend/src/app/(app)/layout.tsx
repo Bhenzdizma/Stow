@@ -8,6 +8,7 @@ import Sidebar from "@/components/app/Sidebar";
 import AddressBadge from "@/components/app/AddressBadge";
 import OnboardingTour from "@/components/app/OnboardingTour";
 import AppAccessLock from "@/components/app/AppAccessLock";
+import ThemeToggle from "@/components/app/ThemeToggle";
 import { useFocusManagement } from "@/hooks/useFocusManagement";
 import {
   BIOMETRIC_ACCESS_CHANGED_EVENT,
@@ -146,7 +147,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <>
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:rounded-lg focus:bg-card focus:px-4 focus:py-2 focus:text-foreground focus:outline-none focus:ring-2 focus:ring-brand"
+      >
+        Skip to main content
+      </a>
+      <div className="flex min-h-screen bg-background">
       <Sidebar
         onSignOut={signOut}
         className="sticky top-0 hidden h-screen shrink-0 md:flex"
@@ -192,6 +200,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               </span>
             )}
             {address && <AddressBadge address={address} />}
+            <ThemeToggle />
             <button
               type="button"
               onClick={() => setTourOpen(true)}
@@ -211,5 +220,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       </div>
       {tourOpen && <OnboardingTour onClose={() => setTourOpen(false)} />}
     </div>
+    </>
   );
 }
