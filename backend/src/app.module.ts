@@ -40,6 +40,9 @@ import { MetricsModule } from './metrics/metrics.module';
 import { FeesModule } from './fees/fees.module';
 import { TaxModule } from './tax/tax.module';
 import { MlModule } from './ml/ml.module';
+import { TransactionDisputeModule } from './transaction-dispute/transaction-dispute.module';
+import { SavingsStreakModule } from './savings-streak/savings-streak.module';
+import { ReferralModule } from './referral/referral.module';
 
 @Module({
   imports: [
@@ -145,6 +148,9 @@ import { MlModule } from './ml/ml.module';
         secret: configService.get<string>('JWT_SECRET'),
       }),
     }),
+    ReferralModule,
+    TransactionDisputeModule,
+    SavingsStreakModule,
   ],
 
   controllers: [AppController],
