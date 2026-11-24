@@ -40,6 +40,7 @@ use crate::events::{
     TOPIC_INTEREST_RATE_SET, TOPIC_INTEREST_WITHDRAW,
 };
 use crate::interest_tiers;
+use crate::profit_share;
 use crate::rewards;
 use crate::storage::{self, extend_instance_ttl};
 use crate::types::{CompoundFrequency, DataKey, InterestAccount};
@@ -449,7 +450,72 @@ fn settle(env: &Env, account: &mut InterestAccount, now: u64) -> Result<i128, Er
 
     account.principal = compounded;
     account.last_compound_at = advanced;
+
+    // Profit sharing (#642): earmark newly credited interest for the owner's
+    // stakeholders, if any are configured.
+    profit_share::record_earned(env, &account.owner, credited)?;
     Ok(credited)
+}
+
+/// Settle accrued interest on `owner`'s account and persist it, without
+/// requiring the owner's auth. Used by `profit_share::distribute` so that a
+/// distribution always includes interest accrued up to now.
+///
+/// Errors: `NotFound` if the account does not exist, `Overflow`.
+pub(crate) fn settle_account(env: &Env, owner: &Address) -> Result<InterestAccount, Error> {
+    let key = DataKey::InterestAccount(owner.clone());
+    let mut account: InterestAccount = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .ok_or(Error::NotFound)?;
+    let now = env.ledger().timestamp();
+    settle(env, &mut account, now)?;
+    account.frequency = frequency(env);
+    account.updated_at = now;
+    env.storage().persistent().set(&key, &account);
+    storage::extend_persistent_ttl(env, &key);
+    Ok(account)
+}
+
+/// Remove `amount` of already-settled interest from `owner`'s principal so it
+/// can be paid out to profit-share stakeholders. Refreshes the tiered rate
+/// for the reduced balance. The caller performs the token transfers.
+///
+/// Errors: `NotFound`, `InsufficientBalance` if `amount` exceeds the
+/// principal, `Overflow`, plus collateral-lock errors.
+pub(crate) fn debit_for_profit_share(
+    env: &Env,
+    owner: &Address,
+    amount: i128,
+) -> Result<i128, Error> {
+    let key = DataKey::InterestAccount(owner.clone());
+    let mut account: InterestAccount = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .ok_or(Error::NotFound)?;
+    if amount > account.principal {
+        return Err(Error::InsufficientBalance);
+    }
+    let new_principal = account
+        .principal
+        .checked_sub(amount)
+        .ok_or(Error::Overflow)?;
+    crate::collateral::check_withdrawal(env, owner, new_principal)?;
+
+    let old_rate_bps = account.rate_bps;
+    let new_rate_bps = interest_tiers::effective_rate_bps(env, new_principal, 0);
+    account.rate_bps = new_rate_bps;
+    account.principal = new_principal;
+    account.updated_at = env.ledger().timestamp();
+    env.storage().persistent().set(&key, &account);
+    storage::extend_persistent_ttl(env, &key);
+
+    if new_rate_bps != old_rate_bps {
+        interest_tiers::emit_rate_changed(env, owner, old_rate_bps, new_rate_bps, new_principal, 0);
+    }
+    Ok(new_principal)
 }
 
 /// Compound `principal` over `periods` whole periods at `rate_bps` annual,

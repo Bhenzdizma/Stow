@@ -37,6 +37,7 @@ pub mod interest_tiers;
 mod limits;
 mod locked;
 mod multisig;
+mod profit_share;
 mod recurring;
 pub mod rewards;
 mod rollover;
@@ -58,6 +59,10 @@ mod limits_test;
 #[cfg(test)]
 #[path = "test/collateral_test.rs"]
 mod collateral_test;
+
+#[cfg(test)]
+#[path = "test/profit_share_test.rs"]
+mod profit_share_test;
 
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Map, String, Vec};
 
@@ -662,6 +667,45 @@ impl SavingsVault {
     /// read-only view; it neither mutates state nor emits events.
     pub fn query_interest_rate(env: Env, balance: i128, lock_secs: u64) -> u32 {
         interest_tiers::query_rate(&env, balance, lock_secs)
+    }
+
+    // --- profit sharing (#642) ---------------------------------------------
+
+    /// Configure profit sharing for the caller's interest account: interest
+    /// it earns is split among `stakeholders` by `shares_bps` (which must sum
+    /// to 10 000 bps) once per `frequency` period.
+    ///
+    /// Calling again on an existing config queues the update; it applies
+    /// from the next distribution period.
+    ///
+    /// Errors: `NotFound` (no interest account), `InvalidProfitShares`.
+    pub fn configure_profit_sharing(
+        env: Env,
+        owner: Address,
+        stakeholders: Vec<Address>,
+        shares_bps: Vec<u32>,
+        frequency: DistributionFrequency,
+    ) -> Result<(), Error> {
+        profit_share::configure(&env, owner, stakeholders, shares_bps, frequency)
+    }
+
+    /// Split `owner`'s accumulated interest among its stakeholders. Callable
+    /// by anyone once the distribution period has elapsed. Returns the total
+    /// paid out and emits `ProfitDistributed`.
+    ///
+    /// Errors: `NotFound`, `DistributionNotDue`, `InsufficientBalance`.
+    pub fn distribute_profit(env: Env, owner: Address) -> Result<i128, Error> {
+        profit_share::distribute(&env, owner)
+    }
+
+    /// Read `owner`'s profit-sharing config, if any.
+    pub fn profit_share_config(env: Env, owner: Address) -> Option<ProfitShareConfig> {
+        profit_share::get_config(&env, owner)
+    }
+
+    /// Lifetime amount paid to `stakeholder` from `owner`'s profit sharing.
+    pub fn profit_distributed(env: Env, owner: Address, stakeholder: Address) -> i128 {
+        profit_share::distributed_to(&env, owner, stakeholder)
     }
 
     // --- emergency mode (#428) --------------------------------------------

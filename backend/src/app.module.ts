@@ -38,6 +38,7 @@ import { GraphqlApiModule } from './graphql/graphql.module';
 import { CacheModule } from './cache/cache.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { FeesModule } from './fees/fees.module';
+import { TaxModule } from './tax/tax.module';
 import { MlModule } from './ml/ml.module';
 
 @Module({
@@ -116,6 +117,7 @@ import { MlModule } from './ml/ml.module';
     CacheModule,
     MetricsModule,
     FeesModule,
+    TaxModule,
     MlModule,
     HealthModule,
     AuthModule,
