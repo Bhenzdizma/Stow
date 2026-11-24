@@ -20,7 +20,7 @@ use soroban_sdk::contracterror;
 /// - 120-129: Rewards
 /// - 130-139: Timelock
 /// - 140-149: Automation (rollover, conditional withdrawals)
-#[contracterror]
+#[contracterror(export = false)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
@@ -156,12 +156,14 @@ pub enum Error {
     InvalidCondition = 141,
     /// No price oracle is configured, or the oracle call failed.
     OracleUnavailable = 142,
-
-    // --- Profit sharing (150-159) ---
-    /// Stakeholder shares are malformed: empty, mismatched lengths, a zero
-    /// share, a duplicate stakeholder, too many stakeholders, or shares that
-    /// do not sum to 10 000 bps (100%).
-    InvalidProfitShares = 150,
-    /// The current distribution period has not elapsed yet.
-    DistributionNotDue = 151,
+    // --- Inheritance / collateral / upgrade (repair) ---
+    CooldownActive = 90,
+    CollateralAlreadyEnabled = 150,
+    CollateralNotEnabled = 151,
+    CollateralLimitExceeded = 152,
+    PositionHealthy = 153,
+    CollateralWithdrawalBlocked = 154,
+    NotRegisteredLender = 155,
+    VaultAlreadyBacking = 156,
+    NoRollbackAvailable = 160,
 }
