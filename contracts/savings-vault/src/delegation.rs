@@ -357,6 +357,10 @@ pub fn delegated_withdraw(
 
     let new_balance = account.balance.checked_sub(amount).ok_or(Error::Overflow)?;
 
+    // Collateral lock: a vault enabled as collateral cannot be withdrawn
+    // below the minimum locked balance for outstanding debt.
+    crate::collateral::check_withdrawal(env, &owner, new_balance)?;
+
     // Funds always go to the owner's wallet, never the delegate's.
     storage::transfer_out(env, &owner, amount)?;
 
