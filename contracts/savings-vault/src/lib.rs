@@ -13,6 +13,7 @@
 //! - [`interest`] — balances that grow by compound interest
 //! - [`rollover`] — locked plans that roll into a new term at maturity
 //! - [`conditional`] — withdrawals gated on price, date or balance conditions
+//! - [`inheritance`] — gradual hand-over of savings to beneficiaries
 //!
 //! This is a **skeleton**: every entrypoint is stubbed with `unimplemented!()`
 //! and a `TODO(issue)` describing the work. Each stub is one contributor issue.
@@ -28,6 +29,7 @@ mod flexible;
 mod goal;
 mod group;
 mod group_split;
+mod inheritance;
 mod insurance;
 mod interest;
 pub mod interest_tiers;
@@ -61,7 +63,7 @@ use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Map, String, Vec
 use crate::error::Error;
 use crate::types::{
     Challenge, ChallengeKind, CompoundFrequency, Delegation, FlexibleAccount, Goal, Group,
-    GroupLimits, GroupWithdrawalRequest, InsuranceClaimRecord, InterestAccount, LockedPlan,
+    GroupLimits, GroupWithdrawalRequest, InheritancePlan, InsuranceClaimRecord, InterestAccount, LockedPlan,
     PermissionLevel, Proposal, QueuedAction, RecurringDeposit, RecurringFrequency, RewardState,
     RewardsConfig, RoundupConfig, RoundupLevel, TimelockAction, UpgradeProposal,
 };
@@ -303,6 +305,68 @@ impl SavingsVault {
 
     pub fn locked_plan(env: Env, plan_id: u64) -> Result<LockedPlan, Error> {
         locked::get_plan(&env, plan_id)
+    }
+
+    // --- inheritance planning (#635) --------------------------------------
+    /// Create or replace the owner's inheritance plan. `beneficiaries` maps
+    /// heir → share in bps (summing to 10 000). Access unlocks after
+    /// `inactivity_period` seconds without owner activity: first
+    /// `partial_access_bps` of each share, then the rest once `verifier`
+    /// attests proof of death (`None` = no proof required, full unlock).
+    /// Emits `InheritanceSetup`.
+    pub fn setup_inheritance(
+        env: Env,
+        owner: Address,
+        beneficiaries: Map<Address, u32>,
+        inactivity_period: u64,
+        partial_access_bps: u32,
+        verifier: Option<Address>,
+    ) -> Result<(), Error> {
+        inheritance::setup_inheritance(
+            &env,
+            owner,
+            beneficiaries,
+            inactivity_period,
+            partial_access_bps,
+            verifier,
+        )
+    }
+
+    /// Cancel the owner's inheritance plan.
+    pub fn cancel_inheritance(env: Env, owner: Address) -> Result<(), Error> {
+        inheritance::cancel_inheritance(&env, owner)
+    }
+
+    /// Reset the owner's inactivity clock without moving funds.
+    pub fn inheritance_check_in(env: Env, owner: Address) -> Result<(), Error> {
+        inheritance::check_in(&env, owner)
+    }
+
+    /// Verifier-only: attest the owner's proof of death, unlocking the full
+    /// share of every beneficiary.
+    pub fn verify_death_proof(
+        env: Env,
+        verifier: Address,
+        owner: Address,
+        proof_hash: BytesN<32>,
+    ) -> Result<(), Error> {
+        inheritance::verify_death_proof(&env, verifier, owner, proof_hash)
+    }
+
+    /// Beneficiary claims everything unlocked for them so far. Returns the
+    /// amount paid. Emits `InheritanceClaimed`.
+    pub fn claim_inheritance(env: Env, beneficiary: Address, owner: Address) -> Result<i128, Error> {
+        inheritance::claim_inheritance(&env, beneficiary, owner)
+    }
+
+    /// The owner's inheritance plan, if any.
+    pub fn inheritance_plan(env: Env, owner: Address) -> Option<InheritancePlan> {
+        inheritance::get_plan(&env, owner)
+    }
+
+    /// Amount `beneficiary` could claim from `owner`'s plan right now.
+    pub fn inheritance_claimable(env: Env, owner: Address, beneficiary: Address) -> i128 {
+        inheritance::claimable(&env, owner, beneficiary)
     }
 
     // --- locked rollover (#638) -------------------------------------------
