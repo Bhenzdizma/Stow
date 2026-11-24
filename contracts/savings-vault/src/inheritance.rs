@@ -93,7 +93,7 @@ pub fn designate_beneficiary(
     beneficiary: Address,
     share_bps: u32,
 ) -> Result<(), Error> {
-    crate::admin::ensure_not_paused(env)?;
+    crate::admin::require_not_paused(env)?;
     extend_instance_ttl(env);
     require_owner(env, &owner);
 
@@ -103,16 +103,16 @@ pub fn designate_beneficiary(
 
     // Load or create the plan.
     let key = DataKey::Inheritance(owner.clone());
-    let mut plan: InheritancePlan = env
-        .storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or_else(|| InheritancePlan {
-            owner: owner.clone(),
-            beneficiaries: Vec::new(env),
-            inactivity_timeout: 0,
-            last_active_at: env.ledger().timestamp(),
-        });
+    let mut plan: InheritancePlan =
+        env.storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| InheritancePlan {
+                owner: owner.clone(),
+                beneficiaries: Vec::new(env),
+                inactivity_timeout: 0,
+                last_active_at: env.ledger().timestamp(),
+            });
 
     // Update existing or append new.
     let mut found = false;
@@ -135,7 +135,10 @@ pub fn designate_beneficiary(
     save_plan(env, &plan);
 
     env.events().publish(
-        (soroban_sdk::symbol_short!("inherit"), soroban_sdk::symbol_short!("benef_set")),
+        (
+            soroban_sdk::symbol_short!("inherit"),
+            soroban_sdk::symbol_short!("benef_set"),
+        ),
         (owner, beneficiary, share_bps),
     );
     Ok(())
@@ -147,7 +150,7 @@ pub fn designate_beneficiary(
 /// - [`Error::NotFound`] if no plan exists or the beneficiary is not in it.
 /// - [`Error::Paused`]   if the vault is paused.
 pub fn remove_beneficiary(env: &Env, owner: Address, beneficiary: Address) -> Result<(), Error> {
-    crate::admin::ensure_not_paused(env)?;
+    crate::admin::require_not_paused(env)?;
     extend_instance_ttl(env);
     require_owner(env, &owner);
 
@@ -169,7 +172,10 @@ pub fn remove_beneficiary(env: &Env, owner: Address, beneficiary: Address) -> Re
     save_plan(env, &plan);
 
     env.events().publish(
-        (soroban_sdk::symbol_short!("inherit"), soroban_sdk::symbol_short!("benef_rm")),
+        (
+            soroban_sdk::symbol_short!("inherit"),
+            soroban_sdk::symbol_short!("benef_rm"),
+        ),
         (owner, beneficiary),
     );
     Ok(())
@@ -186,8 +192,12 @@ pub fn remove_beneficiary(env: &Env, owner: Address, beneficiary: Address) -> Re
 /// # Errors
 /// - [`Error::NotFound`] if no inheritance plan exists for `owner`.
 /// - [`Error::Paused`]   if the vault is paused.
-pub fn set_inactivity_timeout(env: &Env, owner: Address, timeout_seconds: u64) -> Result<(), Error> {
-    crate::admin::ensure_not_paused(env)?;
+pub fn set_inactivity_timeout(
+    env: &Env,
+    owner: Address,
+    timeout_seconds: u64,
+) -> Result<(), Error> {
+    crate::admin::require_not_paused(env)?;
     extend_instance_ttl(env);
     require_owner(env, &owner);
 
@@ -196,7 +206,10 @@ pub fn set_inactivity_timeout(env: &Env, owner: Address, timeout_seconds: u64) -
     save_plan(env, &plan);
 
     env.events().publish(
-        (soroban_sdk::symbol_short!("inherit"), soroban_sdk::symbol_short!("timeout_set")),
+        (
+            soroban_sdk::symbol_short!("inherit"),
+            soroban_sdk::symbol_short!("tmo_set"),
+        ),
         (owner, timeout_seconds),
     );
     Ok(())
@@ -209,7 +222,11 @@ pub fn set_inactivity_timeout(env: &Env, owner: Address, timeout_seconds: u64) -
 /// Not a public entrypoint — only the flexible module calls this.
 pub(crate) fn touch_owner(env: &Env, owner: &Address) {
     let key = DataKey::Inheritance(owner.clone());
-    if let Some(mut plan) = env.storage().persistent().get::<DataKey, InheritancePlan>(&key) {
+    if let Some(mut plan) = env
+        .storage()
+        .persistent()
+        .get::<DataKey, InheritancePlan>(&key)
+    {
         plan.last_active_at = env.ledger().timestamp();
         env.storage().persistent().set(&key, &plan);
         extend_persistent_ttl(env, &key);
@@ -237,7 +254,7 @@ pub(crate) fn touch_owner(env: &Env, owner: &Address) {
 /// - [`Error::Unauthorized`]     if `claimer` is not a beneficiary.
 /// - [`Error::Paused`]           if the vault is paused.
 pub fn claim_inheritance(env: &Env, claimer: Address, owner: Address) -> Result<(), Error> {
-    crate::admin::ensure_not_paused(env)?;
+    crate::admin::require_not_paused(env)?;
     extend_instance_ttl(env);
     claimer.require_auth();
 
@@ -305,7 +322,10 @@ pub fn claim_inheritance(env: &Env, claimer: Address, owner: Address) -> Result<
         .remove(&DataKey::Inheritance(owner.clone()));
 
     env.events().publish(
-        (soroban_sdk::symbol_short!("inherit"), soroban_sdk::symbol_short!("claimed")),
+        (
+            soroban_sdk::symbol_short!("inherit"),
+            soroban_sdk::symbol_short!("claimed"),
+        ),
         (claimer, owner, total_balance, now),
     );
     Ok(())
@@ -341,11 +361,9 @@ mod tests {
         let (vault, _token, owner) = register_vault(&env);
         let heir = Address::generate(&env);
 
-        vault
-            .designate_beneficiary(&owner, &heir, &10_000u32)
-            .unwrap();
+        vault.designate_beneficiary(&owner, &heir, &10_000u32);
 
-        let plan = vault.get_inheritance_plan(&owner).unwrap();
+        let plan = vault.get_inheritance_plan(&owner);
         assert_eq!(plan.beneficiaries.len(), 1);
         assert_eq!(plan.beneficiaries.get(0).unwrap().address, heir);
         assert_eq!(plan.beneficiaries.get(0).unwrap().share_bps, 10_000);
@@ -359,14 +377,10 @@ mod tests {
         let heir1 = Address::generate(&env);
         let heir2 = Address::generate(&env);
 
-        vault
-            .designate_beneficiary(&owner, &heir1, &6_000u32)
-            .unwrap();
-        vault
-            .designate_beneficiary(&owner, &heir2, &4_000u32)
-            .unwrap();
+        vault.designate_beneficiary(&owner, &heir1, &6_000u32);
+        vault.designate_beneficiary(&owner, &heir2, &4_000u32);
 
-        let plan = vault.get_inheritance_plan(&owner).unwrap();
+        let plan = vault.get_inheritance_plan(&owner);
         assert_eq!(plan.beneficiaries.len(), 2);
     }
 
@@ -377,15 +391,11 @@ mod tests {
         let (vault, _token, owner) = register_vault(&env);
         let heir = Address::generate(&env);
 
-        vault
-            .designate_beneficiary(&owner, &heir, &5_000u32)
-            .unwrap();
+        vault.designate_beneficiary(&owner, &heir, &5_000u32);
         // Update the share.
-        vault
-            .designate_beneficiary(&owner, &heir, &10_000u32)
-            .unwrap();
+        vault.designate_beneficiary(&owner, &heir, &10_000u32);
 
-        let plan = vault.get_inheritance_plan(&owner).unwrap();
+        let plan = vault.get_inheritance_plan(&owner);
         assert_eq!(plan.beneficiaries.len(), 1);
         assert_eq!(plan.beneficiaries.get(0).unwrap().share_bps, 10_000);
     }
@@ -425,14 +435,10 @@ mod tests {
         let (vault, _token, owner) = register_vault(&env);
         let heir = Address::generate(&env);
 
-        vault
-            .designate_beneficiary(&owner, &heir, &10_000u32)
-            .unwrap();
-        vault
-            .set_inactivity_timeout(&owner, &(30 * 24 * 3600u64))
-            .unwrap();
+        vault.designate_beneficiary(&owner, &heir, &10_000u32);
+        vault.set_inactivity_timeout(&owner, &(30 * 24 * 3600u64));
 
-        let plan = vault.get_inheritance_plan(&owner).unwrap();
+        let plan = vault.get_inheritance_plan(&owner);
         assert_eq!(plan.inactivity_timeout, 30 * 24 * 3600);
     }
 
@@ -452,21 +458,17 @@ mod tests {
         setup_flexible_account(&env, &vault, &token, &owner, 1_000_000);
 
         // Designate heir and configure timeout.
-        vault
-            .designate_beneficiary(&owner, &heir, &10_000u32)
-            .unwrap();
-        vault.set_inactivity_timeout(&owner, &timeout).unwrap();
+        vault.designate_beneficiary(&owner, &heir, &10_000u32);
+        vault.set_inactivity_timeout(&owner, &timeout);
 
         // Advance past the timeout.
         advance(&env, timeout + 1);
 
-        let heir_balance_before =
-            token::Client::new(&env, &token).balance(&heir);
+        let heir_balance_before = token::Client::new(&env, &token).balance(&heir);
 
-        vault.claim_inheritance(&heir, &owner).unwrap();
+        vault.claim_inheritance(&heir, &owner);
 
-        let heir_balance_after =
-            token::Client::new(&env, &token).balance(&heir);
+        let heir_balance_after = token::Client::new(&env, &token).balance(&heir);
         assert!(heir_balance_after > heir_balance_before);
     }
 
@@ -481,10 +483,8 @@ mod tests {
         let timeout = 90 * 24 * 3600u64;
 
         setup_flexible_account(&env, &vault, &token, &owner, 1_000_000);
-        vault
-            .designate_beneficiary(&owner, &heir, &10_000u32)
-            .unwrap();
-        vault.set_inactivity_timeout(&owner, &timeout).unwrap();
+        vault.designate_beneficiary(&owner, &heir, &10_000u32);
+        vault.set_inactivity_timeout(&owner, &timeout);
 
         // Only half the timeout has passed — should be rejected.
         advance(&env, timeout / 2);
@@ -507,10 +507,8 @@ mod tests {
         let timeout = 1u64;
 
         setup_flexible_account(&env, &vault, &token, &owner, 1_000_000);
-        vault
-            .designate_beneficiary(&owner, &heir, &10_000u32)
-            .unwrap();
-        vault.set_inactivity_timeout(&owner, &timeout).unwrap();
+        vault.designate_beneficiary(&owner, &heir, &10_000u32);
+        vault.set_inactivity_timeout(&owner, &timeout);
         advance(&env, timeout + 1);
 
         assert_eq!(
@@ -531,10 +529,8 @@ mod tests {
 
         setup_flexible_account(&env, &vault, &token, &owner, 1_000_000);
         // Only 5 000 bps — not 10 000.
-        vault
-            .designate_beneficiary(&owner, &heir, &5_000u32)
-            .unwrap();
-        vault.set_inactivity_timeout(&owner, &timeout).unwrap();
+        vault.designate_beneficiary(&owner, &heir, &5_000u32);
+        vault.set_inactivity_timeout(&owner, &timeout);
         advance(&env, timeout + 1);
 
         assert_eq!(
@@ -553,9 +549,7 @@ mod tests {
         let heir = Address::generate(&env);
 
         setup_flexible_account(&env, &vault, &token, &owner, 1_000_000);
-        vault
-            .designate_beneficiary(&owner, &heir, &10_000u32)
-            .unwrap();
+        vault.designate_beneficiary(&owner, &heir, &10_000u32);
         // Timeout stays 0 — inheritance disabled.
 
         advance(&env, 999_999_999);
@@ -577,16 +571,15 @@ mod tests {
         let timeout = 100u64;
 
         setup_flexible_account(&env, &vault, &token, &owner, 1_000_000);
-        vault
-            .designate_beneficiary(&owner, &heir, &10_000u32)
-            .unwrap();
-        vault.set_inactivity_timeout(&owner, &timeout).unwrap();
+        vault.designate_beneficiary(&owner, &heir, &10_000u32);
+        vault.set_inactivity_timeout(&owner, &timeout);
 
         // Advance 90 seconds — still within timeout.
         advance(&env, 90);
 
         // Owner deposits (resets clock to now = 1_000_090).
-        vault.deposit(&owner, &100i128).unwrap();
+        crate::test::mint(&env, &token, &owner, &owner, 100);
+        vault.deposit(&owner, &100i128);
 
         // Advance another 90 seconds — only 90s since last activity.
         advance(&env, 90);
@@ -613,20 +606,16 @@ mod tests {
         setup_flexible_account(&env, &vault, &token, &owner, deposit_amount);
 
         // 60% / 40% split.
-        vault
-            .designate_beneficiary(&owner, &heir1, &6_000u32)
-            .unwrap();
-        vault
-            .designate_beneficiary(&owner, &heir2, &4_000u32)
-            .unwrap();
-        vault.set_inactivity_timeout(&owner, &timeout).unwrap();
+        vault.designate_beneficiary(&owner, &heir1, &6_000u32);
+        vault.designate_beneficiary(&owner, &heir2, &4_000u32);
+        vault.set_inactivity_timeout(&owner, &timeout);
         advance(&env, timeout + 1);
 
         let tok = token::Client::new(&env, &token);
         let before1 = tok.balance(&heir1);
         let before2 = tok.balance(&heir2);
 
-        vault.claim_inheritance(&heir1, &owner).unwrap();
+        vault.claim_inheritance(&heir1, &owner);
 
         let got1 = tok.balance(&heir1) - before1;
         let got2 = tok.balance(&heir2) - before2;

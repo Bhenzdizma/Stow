@@ -241,3 +241,12 @@ pub const TOPIC_WITHDRAWAL_CONDITION_CANCELLED: &str = "withdrawal_condition_can
 /// Data:   `(owner: Address, amount: i128, condition: WithdrawalCondition,
 ///          observed: i128, new_balance: i128, timestamp: u64)`
 pub const TOPIC_CONDITIONAL_WITHDRAWAL: &str = "ConditionalWithdrawal";
+
+// --- Collateral & lenders (#645) ---
+pub const TOPIC_COLLATERAL_ENABLED: &str = "collateral_enabled";
+pub const TOPIC_COLLATERAL_DISABLED: &str = "collateral_disabled";
+pub const TOPIC_COLLATERAL_USED: &str = "collateral_used";
+pub const TOPIC_COLLATERAL_REPAID: &str = "collateral_repaid";
+pub const TOPIC_COLLATERAL_LIQUIDATED: &str = "collateral_liquidated";
+pub const TOPIC_LENDER_REGISTERED: &str = "lender_registered";
+pub const TOPIC_LENDER_DEREGISTERED: &str = "lender_deregistered";

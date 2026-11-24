@@ -560,6 +560,95 @@ pub struct RoundupConfig {
     pub deposited_total: i128,
 }
 
+// ---------------------------------------------------------------------------
+// Loan collateral (#645)
+// ---------------------------------------------------------------------------
+
+/// Per-vault collateral state, stored under `DataKey::CollateralState(owner)`.
+///
+/// `max_borrow = balance * borrow_ratio_bps / 10_000` (rounded down).
+/// Liquidation allowed when `borrowed * 10_000 > balance * liquidation_ratio_bps`.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CollateralState {
+    pub owner: Address,
+    /// Whether this vault is currently enabled as collateral.
+    pub enabled: bool,
+    /// The loan id this vault is backing. `0` means not currently backing any loan.
+    pub loan_id: u64,
+    /// Amount currently borrowed against this vault, in token stroops.
+    pub borrowed: i128,
+    /// Collateral borrow ratio in basis points (e.g. 8_000 = 80 %).
+    pub borrow_ratio_bps: u32,
+    /// Liquidation threshold in basis points (e.g. 9_000 = 90 %).
+    pub liquidation_ratio_bps: u32,
+}
+
+/// A loan record, stored under `DataKey::LoanRecord(loan_id)`.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct LoanRecord {
+    pub loan_id: u64,
+    /// The registered lender that created this loan.
+    pub lender: Address,
+    /// Total amount borrowed against all vaults backing this loan.
+    pub total_borrowed: i128,
+    /// Owner addresses of the vaults backing this loan.
+    pub vaults: Vec<Address>,
+    pub created_at: u64,
+}
+
+// ---------------------------------------------------------------------------
+// Inheritance (#439)
+// ---------------------------------------------------------------------------
+
+/// A single beneficiary in an inheritance plan, with their share.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Beneficiary {
+    /// Address that will receive funds when the inheritance is claimed.
+    pub address: Address,
+    /// Share of the balance in basis points. All shares must sum to `10_000`.
+    pub share_bps: u32,
+}
+
+/// An inheritance plan for a flexible savings account.
+/// Stored under `DataKey::Inheritance(owner)`.
+#[contracttype]
+#[derive(Clone)]
+pub struct InheritancePlan {
+    pub owner: Address,
+    /// Ordered list of beneficiaries. Shares must sum to `10_000` bps.
+    pub beneficiaries: Vec<Beneficiary>,
+    /// Seconds of inactivity before beneficiaries may claim. `0` disables inheritance.
+    pub inactivity_timeout: u64,
+    /// Ledger timestamp of the owner's most recent deposit or withdrawal.
+    pub last_active_at: u64,
+}
+
+// ---------------------------------------------------------------------------
+// Tiered interest rates (#619)
+// ---------------------------------------------------------------------------
+
+/// Admin-configurable tiered interest-rate parameters, in basis points.
+/// Stored under `DataKey::TieredRateConfig` in instance storage.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct TieredRateConfig {
+    /// Annual rate for balances strictly below 1 000 token units.
+    pub tier_low_rate_bps: u32,
+    /// Annual rate for balances at or above 1 000 and below 10 000 token units.
+    pub tier_mid_rate_bps: u32,
+    /// Annual rate for balances at or above 10 000 token units.
+    pub tier_high_rate_bps: u32,
+    /// Additional bps for lock periods >= 3 months but < 6 months.
+    pub lock_3mo_bonus_bps: u32,
+    /// Additional bps for lock periods >= 6 months but < 12 months.
+    pub lock_6mo_bonus_bps: u32,
+    /// Additional bps for lock periods >= 12 months.
+    pub lock_12mo_bonus_bps: u32,
+}
+
 /// Storage keys. One variant per logical record family.
 ///
 /// See `storage` module docs for the full storage model: durability
@@ -567,7 +656,7 @@ pub struct RoundupConfig {
 /// Every variant below is documented with its durability + TTL at a glance;
 /// treat the `storage` module doc as the canonical source if the two ever
 /// disagree.
-#[contracttype]
+#[contracttype(export = false)]
 #[derive(Clone)]
 pub enum DataKey {
     /// Global config / initialization guard.
@@ -794,4 +883,18 @@ pub enum DataKey {
     /// Durability: persistent — one entry per owner. TTL: bumped on every
     /// read/write via `extend_persistent_ttl`.
     WithdrawalCondition(Address),
+
+    // --- Added during merge repair ---
+    /// Registered lender flag by address (#645).
+    RegisteredLender(Address),
+    /// Collateral state by vault owner (#645).
+    CollateralState(Address),
+    /// `LoanRecord` by loan id (#645).
+    LoanRecord(u64),
+    /// Monotonic counter for loan ids (#645).
+    NextLoanId,
+    /// `InheritancePlan` by owner (#439).
+    Inheritance(Address),
+    /// `TieredRateConfig` (#619).
+    TieredRateConfig,
 }
