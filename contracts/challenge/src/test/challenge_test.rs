@@ -405,3 +405,122 @@ fn growth_rate_measures_growth_over_first_deposit() {
     assert_eq!(c.client.settle(&id, &flat), STAKE - 200 + 5_000);
     assert_eq!(c.client.settle(&id, &grower), STAKE + 1_500 + 200);
 }
+
+// ── Additional Edge Cases ──────────────────────────────────────────────────
+
+#[test]
+fn multiple_challenges_track_separately() {
+    let c = setup();
+    let id1 = c.create(&c.config(ChallengeKind::TotalSaved, 1_000));
+    let id2 = c.create(&c.config(ChallengeKind::Consistency, 3));
+    
+    let alice = c.funded(20_000);
+    c.client.join(&alice, &id1);
+    c.client.join(&alice, &id2);
+    
+    c.client.deposit(&alice, &id1, &1_000);
+    c.client.deposit(&alice, &id2, &100);
+    c.advance(DAY);
+    c.client.deposit(&alice, &id2, &100);
+    c.advance(DAY);
+    c.client.deposit(&alice, &id2, &100);
+    
+    assert!(c.client.is_on_track(&id1, &alice));
+    assert!(c.client.is_on_track(&id2, &alice));
+    assert_eq!(c.client.get_participant(&id1, &alice).saved, 1_000);
+    assert_eq!(c.client.get_participant(&id2, &alice).active_periods, 3);
+    assert_eq!(c.balance(&alice), 20_000 - 2 * STAKE - 1_300);
+}
+
+#[test]
+fn penalty_bps_at_maximum_takes_all_stake() {
+    let c = setup();
+    let mut config = c.config(ChallengeKind::TotalSaved, 5_000);
+    config.penalty_bps = 10_000; // 100% penalty
+    let id = c.create(&config);
+    
+    let winner = c.joined(id, 10_000);
+    let loser = c.joined(id, 10_000);
+    
+    c.client.deposit(&winner, &id, &5_000);
+    c.end(id);
+    
+    // Loser gets nothing back from stake, winner gets entire loser's stake
+    assert_eq!(c.client.settle(&id, &loser), 0);
+    assert_eq!(c.client.settle(&id, &winner), STAKE + 5_000 + STAKE);
+    assert_eq!(c.balance(&winner), 10_000 + STAKE);
+    assert_eq!(c.balance(&loser), 10_000 - STAKE);
+}
+
+#[test]
+fn zero_penalty_returns_full_stake_to_losers() {
+    let c = setup();
+    let mut config = c.config(ChallengeKind::TotalSaved, 5_000);
+    config.penalty_bps = 0; // No penalty
+    let id = c.create(&config);
+    
+    let winner = c.joined(id, 10_000);
+    let loser = c.joined(id, 10_000);
+    
+    c.client.deposit(&winner, &id, &5_000);
+    c.end(id);
+    
+    // Loser gets full stake back, winner gets stake plus deposits (no bonus)
+    assert_eq!(c.client.settle(&id, &loser), STAKE);
+    assert_eq!(c.client.settle(&id, &winner), STAKE + 5_000);
+    assert_eq!(c.balance(&winner), 10_000);
+    assert_eq!(c.balance(&loser), 10_000);
+}
+
+#[test]
+fn consistency_target_exactly_met_at_deadline() {
+    let c = setup();
+    let id = c.create(&c.config(ChallengeKind::Consistency, 7));
+    let alice = c.joined(id, 10_000);
+    
+    // Make deposits across exactly 7 distinct periods (days 0-6)
+    for day in 0..7 {
+        if day > 0 {
+            c.advance(DAY);
+        }
+        c.client.deposit(&alice, &id, &10);
+    }
+    
+    assert_eq!(c.client.get_participant(&id, &alice).active_periods, 7);
+    assert!(c.client.is_on_track(&id, &alice));
+    
+    c.end(id);
+    // Alice is the only participant and meets the target
+    assert_eq!(c.client.settle(&id, &alice), STAKE + 70);
+    assert_eq!(c.client.get_challenge(&id).winners, 1);
+}
+
+#[test]
+fn settle_handles_participant_with_no_deposits() {
+    let c = setup();
+    let id = c.create(&c.config(ChallengeKind::TotalSaved, 1_000));
+    
+    let winner = c.joined(id, 10_000);
+    let idle = c.joined(id, 10_000);
+    let loser_with_deposit = c.joined(id, 10_000);
+    
+    c.client.deposit(&winner, &id, &1_000);
+    c.client.deposit(&loser_with_deposit, &id, &500);
+    // idle makes no deposits at all
+    
+    c.end(id);
+    
+    // Idle participant loses penalty from stake with no deposits to reclaim
+    let idle_payout = c.client.settle(&id, &idle);
+    assert_eq!(idle_payout, STAKE - 200); // 20% penalty, no deposits
+    
+    // Loser with deposit gets stake minus penalty plus their deposits back
+    let loser_payout = c.client.settle(&id, &loser_with_deposit);
+    assert_eq!(loser_payout, STAKE - 200 + 500);
+    
+    // Winner gets bonus from both losers' penalties (400 total)
+    let winner_payout = c.client.settle(&id, &winner);
+    assert_eq!(winner_payout, STAKE + 1_000 + 400);
+    
+    assert_eq!(c.balance(&c.client.address), 0);
+}
