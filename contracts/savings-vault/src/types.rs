@@ -554,10 +554,15 @@ pub enum RoundupLevel {
 pub struct RoundupConfig {
     pub owner: Address,
     pub level: RoundupLevel,
+    /// Whether round-ups are currently on. Disabled configs keep their totals.
+    pub enabled: bool,
     /// Sum of all external transaction amounts tracked so far, in stroops.
     pub tracked_total: i128,
     /// Sum of all round-up amounts deposited so far, in stroops.
     pub deposited_total: i128,
+    /// Sum of round-up amounts skipped because the owner's token balance
+    /// could not cover them, in stroops.
+    pub skipped_total: i128,
 }
 
 /// Storage keys. One variant per logical record family.

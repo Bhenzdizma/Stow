@@ -41,6 +41,9 @@ mod rollover_test;
 #[path = "test/conditional_test.rs"]
 mod conditional_test;
 
+#[path = "test/roundup_test.rs"]
+mod roundup_test;
+
 #[contract]
 struct ReentrantToken;
 
