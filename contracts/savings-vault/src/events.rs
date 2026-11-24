@@ -213,8 +213,15 @@ pub const TOPIC_DELEGATION_UPDATED: &str = "delegation_updated";
 pub const TOPIC_DELEGATION_REVOKED: &str = "delegation_revoked";
 
 // --- roundup -----------------------------------------------------------
+/// Emitted when an owner turns round-ups on or changes the level.
+pub const TOPIC_ROUNDUP_ENABLED: &str = "roundup_enabled";
+/// Emitted when an owner turns round-ups off.
+pub const TOPIC_ROUNDUP_DISABLED: &str = "roundup_disabled";
 /// Emitted when an external transaction's round-up difference is deposited.
-pub const TOPIC_ROUNDUP_DEPOSIT: &str = "roundup_deposit";
+pub const TOPIC_ROUNDUP_DEPOSIT: &str = "RoundupDeposit";
+/// Emitted when a round-up is skipped because the owner's token balance
+/// cannot cover the difference.
+pub const TOPIC_ROUNDUP_SKIPPED: &str = "RoundupSkipped";
 
 // --- locked rollover (#638) ---------------------------------------------
 /// Emitted when an owner enables (or reconfigures) auto-rollover on a plan.

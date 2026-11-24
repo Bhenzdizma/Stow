@@ -35,8 +35,6 @@ mod interest;
 pub mod interest_tiers;
 mod limits;
 mod locked;
-pub mod rewards;
-mod roundup;
 mod multisig;
 mod recurring;
 pub mod rewards;
@@ -999,6 +997,10 @@ impl SavingsVault {
     // --- savings round-ups (issue #622) --------------------------------------
     pub fn enable_roundup(env: Env, owner: Address, level: RoundupLevel) -> Result<(), Error> {
         roundup::enable(&env, owner, level)
+    }
+
+    pub fn disable_roundup(env: Env, owner: Address) -> Result<(), Error> {
+        roundup::disable(&env, owner)
     }
 
     pub fn roundup_config(env: Env, owner: Address) -> Result<RoundupConfig, Error> {
