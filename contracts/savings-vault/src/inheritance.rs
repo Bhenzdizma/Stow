@@ -231,7 +231,11 @@ pub fn check_in(env: &Env, owner: Address) -> Result<(), Error> {
 /// too unless claims were already paid against it.
 pub(crate) fn touch_owner(env: &Env, owner: &Address) {
     let key = DataKey::Inheritance(owner.clone());
-    if let Some(mut plan) = env.storage().persistent().get::<DataKey, InheritancePlan>(&key) {
+    if let Some(mut plan) = env
+        .storage()
+        .persistent()
+        .get::<DataKey, InheritancePlan>(&key)
+    {
         plan.last_active_at = env.ledger().timestamp();
         plan.proof_hash = None;
         plan.proof_verified_at = None;
