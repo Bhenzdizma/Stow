@@ -97,6 +97,12 @@ fn deposit_with_transfer(
     crate::inheritance::touch_owner(env, &from);
     storage::extend_persistent_ttl(env, &key);
 
+    // Owner-signed deposits count as activity for inheritance planning.
+    // Allowance-driven (keeper) deposits do not prove the owner is alive.
+    if require_owner_auth {
+        crate::inheritance::touch_owner(env, &from);
+    }
+
     env.events().publish(
         (TOPIC_DEPOSIT, from.clone()),
         (from, amount, new_balance, now),
@@ -155,6 +161,8 @@ pub fn withdraw(env: &Env, owner: Address, amount: i128) -> Result<(), Error> {
     env.storage().persistent().set(&key, &account);
     crate::inheritance::touch_owner(env, &owner);
     storage::extend_persistent_ttl(env, &key);
+
+    crate::inheritance::touch_owner(env, &owner);
 
     env.events().publish(
         (TOPIC_WITHDRAW, owner.clone()),
